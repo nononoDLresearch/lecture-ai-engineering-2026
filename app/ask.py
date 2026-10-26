@@ -1,10 +1,11 @@
-"""第1回: 素のLLMに1回だけ質問するスクリプト。
+"""第1回: 素のLLMに質問するスクリプト。
 
 使い方:
     uv run python -m app.ask "LoRAとは何ですか？"
     uv run python -m app.ask            # 質問を省略すると、講座に固有の質問をする
+    uv run python -m app.ask --interactive  # 会話履歴を保って続けて質問する
 
-ツールも会話履歴も持たない「素の」呼び出し。
+ツールを持たない「素の」呼び出し。
 講座に固有のことを聞くと、「分からない」と答えるか、一般論でもっともらしく答える
 （講座の実際とは違う）ことを確かめよう。
 （第3回で、用語集を検索できるエージェントにして改善する）
@@ -13,6 +14,7 @@
 import argparse
 
 from google import genai
+from google.genai import types
 from google.genai import errors
 
 from app.config import MODEL, api_error_message, get_api_key
@@ -21,9 +23,15 @@ from app.config import MODEL, api_error_message, get_api_key
 DEFAULT_QUESTION = "AIE2026の講座の宿題にある「3レベル」とは何ですか？"
 
 
-def ask(question: str) -> str:
+def ask(question: str, history: list[types.Content] | None = None) -> str:
     client = genai.Client(api_key=get_api_key())
-    response = client.models.generate_content(model=MODEL, contents=question)
+    if history is None:
+        history = []
+    user_message = types.Content(role="user", parts=[types.Part.from_text(text=question)])
+    response = client.models.generate_content(
+        model=MODEL,
+        contents=[*history, user_message],
+    )
 
     usage = response.usage_metadata
     if usage is None:
@@ -35,18 +43,57 @@ def ask(question: str) -> str:
         output_display = output_tokens if output_tokens is not None else "不明"
         print(f"[トークン数] 入力: {input_display} / 出力: {output_display}")
 
-    return response.text
+    answer = response.text or ""
+    history.extend(
+        [
+            user_message,
+            types.Content(role="model", parts=[types.Part.from_text(text=answer)]),
+        ]
+    )
+    return answer
+
+
+def ask_interactively(initial_question: str | None = None) -> None:
+    history: list[types.Content] = []
+    question = initial_question
+    while True:
+        if question is None:
+            try:
+                question = input("質問> ")
+            except EOFError:
+                print()
+                return
+        question = question.strip()
+        if question.lower() in {"終了", "exit", "quit"}:
+            return
+        if not question:
+            question = None
+            continue
+
+        print(f"[質問] {question}\n")
+        try:
+            print(ask(question, history))
+        except errors.APIError as e:
+            print(api_error_message(e.code, e.message))
+        print()
+        question = None
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="素のLLMに質問する")
-    parser.add_argument("question", nargs="?", default=DEFAULT_QUESTION)
+    parser.add_argument("question", nargs="?")
+    parser.add_argument("--interactive", "-i", action="store_true", help="会話履歴を保って続けて質問する")
     args = parser.parse_args()
 
     print(f"[model] {MODEL}")
-    print(f"[質問] {args.question}\n")
+    if args.interactive:
+        ask_interactively(args.question)
+        return
+
+    question = args.question or DEFAULT_QUESTION
+    print(f"[質問] {question}\n")
     try:
-        print(ask(args.question))
+        print(ask(question))
     except errors.APIError as e:
         print(api_error_message(e.code, e.message))
         raise SystemExit(1)
