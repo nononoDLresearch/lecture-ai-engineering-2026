@@ -39,6 +39,27 @@ def test_lecture_summary():
     assert "まだありません" in tools.get_lecture_summary(99)
 
 
+def test_save_learning_log(tmp_path, monkeypatch):
+    monkeypatch.setattr(tools, "LOG_DIR", tmp_path / "learning_log")
+
+    result = tools.save_learning_log(2, "LoRAについて学んだ")
+
+    saved_files = list(tools.LOG_DIR.glob("*.md"))
+    assert len(saved_files) == 1
+    assert saved_files[0].read_text(encoding="utf-8") == (
+        "# 第2回 学習記録\n\nLoRAについて学んだ\n"
+    )
+    assert str(saved_files[0]) in result
+
+
+def test_save_learning_log_rejects_invalid_input(tmp_path, monkeypatch):
+    monkeypatch.setattr(tools, "LOG_DIR", tmp_path / "learning_log")
+
+    assert "1以上" in tools.save_learning_log(0, "内容")
+    assert "空" in tools.save_learning_log(2, "  ")
+    assert not tools.LOG_DIR.exists()
+
+
 def test_default_question_of_lecture1_is_answerable_from_glossary():
     """第1回の既定の質問（app.ask）は、第3回のエージェントが用語集で正しく答えられること。"""
     from app.ask import DEFAULT_QUESTION
