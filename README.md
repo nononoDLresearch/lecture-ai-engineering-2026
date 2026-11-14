@@ -53,6 +53,7 @@ lectures/NN/
 notebooks/       第2回：Google Colab で動かす LoRA のノートブック（lora_format_tuning.ipynb）
 scripts/         補助スクリプト
 tests/           テスト（APIキー不要）
+worklogs/        作業ごとの変更・確認結果のログ（提出回答とは別）
 pyproject.toml / uv.lock  依存パッケージとその固定版
 ```
 
