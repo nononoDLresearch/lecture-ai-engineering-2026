@@ -10,6 +10,8 @@ from datetime import datetime
 from functools import cache
 from pathlib import Path
 
+from app.config import api_error_message
+
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 LOG_DIR = Path(__file__).resolve().parent.parent / "learning_log"
 MAX_RESULTS = 3
@@ -80,41 +82,3 @@ def get_lecture_summary(lecture: int) -> str:
         available = sorted(p.stem for p in (DATA_DIR / "lectures").glob("*.md"))
         return f"第{lecture}回の要点はまだありません。用意されている回: {', '.join(available)}"
     return path.read_text(encoding="utf-8")
-
-def make_quiz(lecture: int) -> str:
-    """指定した回の用語から確認問題を作るときに使う。
-
-    その回の用語を1つ選び、「○○の意味は？」という問題と用語の定義を返す。
-    """
-    terms = [term for term in load_glossary() if term["lecture"] == lecture]
-    if not terms:
-        return f"第{lecture}回の用語が見つかりませんでした。"
-
-    term = random.choice(terms)
-    return json.dumps(
-        {
-            "question": f"「{term['term']}」の意味は？",
-            "answer": term["definition"],
-        },
-        ensure_ascii=False,
-    )
-
-
-def save_learning_log(lecture: int, content: str) -> str:
-    """利用者が学習記録の保存を希望したときに使う。
-
-    指定した回と学習内容を learning_log/ に新しいMarkdownファイルとして保存する。
-    """
-    if lecture < 1:
-        return "講義回は1以上を指定してください。"
-    if not content.strip():
-        return "学習記録が空のため保存しませんでした。"
-
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now().astimezone().strftime("%Y%m%d-%H%M%S-%f")
-    path = LOG_DIR / f"lecture-{lecture:02d}-{timestamp}.md"
-
-    with path.open("x", encoding="utf-8") as log_file:
-        log_file.write(f"# 第{lecture}回 学習記録\n\n{content.strip()}\n")
-
-    return f"学習記録を保存しました: {path}"
