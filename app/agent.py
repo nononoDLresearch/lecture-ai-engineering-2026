@@ -21,7 +21,7 @@ from pathlib import Path
 from contextlib import nullcontext
 from time import perf_counter
 
-from pydantic_ai import Agent, DeferredToolRequests
+from pydantic_ai import Agent, DeferredToolRequests, DeferredToolResults
 from pydantic_ai.exceptions import ModelHTTPError
 from fastmcp import Client
 from pydantic_ai.mcp import MCPToolset, StdioTransport
@@ -79,8 +79,9 @@ FULL_CONTEXT_PROMPT = "<資料>\n{materials}\n</資料>\n\n質問: {question}"
 
 
 # モデルは実行時に渡す（テストではAPIを呼ばない TestModel に差し替えるため）
-agent = Agent(instructions=INSTRUCTIONS)
+agent = Agent(instructions=INSTRUCTIONS, output_type=[str, DeferredToolRequests])
 agent.tool_plain(tools.search_glossary)
+agent.tool_plain(tools.search_materials)
 agent.tool_plain(tools.get_lecture_summary)
 
 #第3回のmake_quizの登録
@@ -205,19 +206,54 @@ def main() -> None:
             return
         if not args.question:
             parser.error("質問を指定してください")
+            
+        print(f"[model] {MODEL}")
+        if args.mcp:
+            print("[tools] MCP サーバー（app/mcp_servers.json）")
 
-    print(f"[model] {MODEL}")
-    if args.mcp:
-        print("[tools] MCP サーバー（app/mcp_servers.json）")
-    try:
-        result = target.run_sync(args.question, model=build_model())
-    except ModelHTTPError as e:
-        print(api_error_message(e.status_code, str(e.body)[:200]))
-        raise SystemExit(1)
-    print(result.output)
-    if args.trace:
-        print_trace(result)
+        # 実行時間の計測を開始（コード1から復元）
+        started = perf_counter()
 
+        try:
+            model = build_model()
+
+            # --full-context モードを復元
+            if args.full_context:
+                result = run_full_context(
+                    target, args.question, model,
+                    instructions=FULL_CONTEXT_INSTRUCTIONS,
+                    prompt_template=FULL_CONTEXT_PROMPT,
+                )
+            else:
+                result = target.run_sync(args.question, model=model)
+
+            # コード2の保存承認機能は維持
+            if isinstance(result.output, DeferredToolRequests):
+                approvals = {}
+
+                for request in result.output.approvals:
+                    print(f"\n保存要求: {request.tool_name} {request.args}")
+                    response = input("保存しますか？ [y/N]: ").strip().lower()
+                    approvals[request.tool_call_id] = response in {"y", "yes"}
+
+                result = target.run_sync(
+                    args.question,
+                    model=model,
+                    message_history=result.all_messages(),
+                    deferred_tool_results=DeferredToolResults(approvals=approvals),
+                )
+
+        except ModelHTTPError as e:
+            print(api_error_message(e.status_code, str(e.body)[:200]))
+            raise SystemExit(1)
+
+        # 実行時間を計算（コード1から復元）
+        elapsed_seconds = perf_counter() - started
+
+        print(result.output)
+
+        if args.trace:
+            print_trace(result, elapsed_seconds)
 
 if __name__ == "__main__":
     main()
