@@ -123,7 +123,6 @@ def build_mcp_agent(config_path: Path = MCP_CONFIG) -> Agent:
 def build_model() -> GoogleModel:
     return GoogleModel(MODEL, provider=GoogleProvider(api_key=get_api_key()))
 
-
 def print_tools(target: Agent) -> None:
     """モデルに見えているツールの一覧（名前・説明文・引数）を表示する。LLM は呼ばない。
 
